@@ -2,9 +2,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 #pragma warning disable IDE0017
 #pragma warning disable IDE0063
@@ -13,26 +10,59 @@ namespace YuRis_Tool
 {
     class YSCM
     {
-        public class CommandAction
+        public enum ExprEvalResult : byte
         {
-            public string Name;
-            public int ArgType; // 0 - Int, 1 - String, 2 - Double
-            public int ArgVaid;
+            Integer,
+            String,
+            Decimal,
+            Raw
         }
 
-        public class Command
+        public enum ResultValidateMode : byte
         {
-            public string Name;
-            public List<CommandAction> Actions;
+            ValidateMinimum,
         }
 
-        List<Command> _commands;
+        public class ExpressionInfo
+        {
+            public string Name;
+            public ExprEvalResult ResultType;
+            public ResultValidateMode ValidateMode;
+
+            public override string ToString()
+            {
+                return $"Arg({Name}), Type:({ResultType})";
+            }
+        }
+
+        public ExpressionInfo GetExprInfo(int commandId, int exprId)
+        {
+            var cmd = _commandsInfo[commandId];
+            if (cmd.ArgExprs.Count <= exprId)
+            {
+                return null;
+            }
+            return cmd.ArgExprs[exprId];
+        }
+
+        public class CommandInfo
+        {
+            public string Name;
+            public List<ExpressionInfo> ArgExprs;
+
+            public override string ToString()
+            {
+                return $"Cmd({Name}), ArgExprs:({ArgExprs.Count})";
+            }
+        }
+
+        List<CommandInfo> _commandsInfo;
         List<string> _errorMessage;
         byte[] _unknowBlock;
 
-        public IReadOnlyList<Command> Commands
+        public IReadOnlyList<CommandInfo> CommandsInfo
         {
-            get => _commands;
+            get => _commandsInfo;
         }
 
         public void Load(string filePath)
@@ -42,6 +72,7 @@ namespace YuRis_Tool
             {
                 Read(reader);
             }
+            CommandIDGenerator.GenerateType(this);
         }
 
         void Read(BinaryReader reader)
@@ -59,11 +90,11 @@ namespace YuRis_Tool
 
             reader.ReadInt32(); // zero
 
-            _commands = new List<Command>(count);
+            _commandsInfo = new List<CommandInfo>(count);
 
             for (var i = 0; i < count; i++)
             {
-                var cmd = new Command();
+                var cmd = new CommandInfo();
                 
                 cmd.Name = reader.ReadAnsiString();
 
@@ -71,19 +102,18 @@ namespace YuRis_Tool
 
                 var actionCount = reader.ReadByte();
 
-                cmd.Actions = new List<CommandAction>(actionCount);
+                cmd.ArgExprs = new List<ExpressionInfo>(actionCount);
 
                 for (var j = 0; j < actionCount; j++)
                 {
-                    var act = new CommandAction();
+                    var act = new ExpressionInfo();
                     act.Name = reader.ReadAnsiString();
-                    act.ArgType = reader.ReadByte();
-                    act.ArgVaid = reader.ReadByte();
-                    cmd.Actions.Add(act);
-                    //Debug.WriteLine($"    {act.Name} t={act.ArgType}");
+                    act.ResultType = (ExprEvalResult)reader.ReadByte();
+                    act.ValidateMode = (ResultValidateMode)reader.ReadByte();
+                    cmd.ArgExprs.Add(act);
                 }
 
-                _commands.Add(cmd);
+                _commandsInfo.Add(cmd);
             }
 
             _errorMessage = new List<string>(37);

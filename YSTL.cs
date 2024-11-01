@@ -3,9 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 #pragma warning disable IDE0017
 #pragma warning disable IDE0063
@@ -14,13 +11,15 @@ namespace YuRis_Tool
 {
     class YSTL
     {
-        class ScriptInfo
+        public class ScriptInfo
         {
             public int Id { get; set; }
             public string Source { get; set; }
         }
 
         List<ScriptInfo> _scripts;
+
+        public IEnumerator<ScriptInfo> GetEnumerator() => _scripts.GetEnumerator();
 
         public void Load(string filePath)
         {
@@ -48,7 +47,7 @@ namespace YuRis_Tool
                 throw new Exception("Not a valid YSTL file.");
             }
 
-            reader.ReadInt32(); // version
+            var version = reader.ReadInt32(); // version
 
             var count = reader.ReadInt32();
 
@@ -60,11 +59,13 @@ namespace YuRis_Tool
 
                 info.Id = reader.ReadInt32();
                 info.Source = reader.ReadAnsiString(reader.ReadInt32());
+                //Unknown values
                 reader.ReadInt32();
                 reader.ReadInt32();
                 reader.ReadInt32();
                 reader.ReadInt32();
-                reader.ReadInt32();
+                if(version > 462)
+                    reader.ReadInt32();
 
                 _scripts.Add(info);
             }
