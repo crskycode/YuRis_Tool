@@ -7,14 +7,46 @@ namespace YuRis_Tool
 {
     public class YSVR
     {
-        public enum VariableScope : byte
+        public enum VariableType : byte
         {
-            None,
-            Global,
-            Script
+            Void,
+            Integer,
+            Decimal,
+            String
         }
 
-        public record struct Variable(VariableScope Scope, short ScriptIndex, short VariableId, byte Type, uint[] Dimensions, object Value);
+        public enum VariableScope : byte
+        {
+            local,
+            global,
+            script,
+            unknown
+        }
+
+        public class Variable
+        {
+            public VariableScope Scope;
+            public short ScriptIndex;
+            public short VariableId;
+            public byte Type;
+            public uint[] Dimensions;
+            public object Value;
+
+            public Variable(VariableScope scope, short scriptIndex, short variableId, byte type, uint[] dimensions, object value)
+            {
+                Scope = scope;
+                ScriptIndex = scriptIndex;
+                VariableId = variableId;
+                Type = type;
+                Dimensions = dimensions;
+                Value = value;
+            }
+
+            public override string ToString()
+            {
+                return $"{Scope}.{VariableId} -> {Type}({string.Join(",", Dimensions)})";
+            }
+        }
 
         static List<Variable> _variables = new List<Variable>();
 
@@ -36,7 +68,7 @@ namespace YuRis_Tool
                 throw new Exception("Not a valid YSVR file.");
             }
 
-            reader.ReadInt32(); // version
+            var ver = reader.ReadInt32(); // version
 
             var count = reader.ReadUInt16();
 
@@ -44,6 +76,9 @@ namespace YuRis_Tool
             for (int i = 0; i < count; i++)
             {
                 var scope = (VariableScope)reader.ReadByte();
+                //Workaround
+                if(ver > 550)
+                    reader.ReadByte();
                 var scriptIndex = reader.ReadInt16();
                 var variableId = reader.ReadInt16();
                 var type = reader.ReadByte();
@@ -78,45 +113,59 @@ namespace YuRis_Tool
             }
         }
 
-        public static string GetDecompiledVarName(int scriptIndex, short variableId)
+        public static Variable GetVariable(int scriptIndex, short variableId)
         {
             var variable = _variables.Where(v => v.ScriptIndex == scriptIndex && v.VariableId == variableId).FirstOrDefault();
-            if(variable == default)
+            if (variable == default)
             {
                 variable = _variables.Where(v => v.VariableId == variableId).FirstOrDefault();
             }
 
-            if(variable != default)
+            if (variable != default)
             {
-                return $"{(variable.Scope == VariableScope.Global ? "global" : "script")}.{variableId}";
+                return variable;
             }
             else
             {
                 //stack local var?
-                return $"local.{variableId}";
+                var ret = new Variable(VariableScope.local, Convert.ToInt16(scriptIndex), variableId, 0, Array.Empty<uint>(), null);
+                //register var
+                _variables.Add(ret);
+                return ret;
             }
+        }
+
+        public static string GetDecompiledVarName(Variable variable)
+        {
+            if (variable.Scope == VariableScope.global && variable.VariableId < YSCD.ReservedVars.Count)
+            {
+                return $"{YSCD.ReservedVars[variable.VariableId].Name}";
+            }
+
+            return $"{variable.Scope}.{variable.VariableId}";
         }
 
         public static void WriteGlobalVarDecl(TextWriter writer)
         {
-            foreach (var variable in _variables.Where(v => v.Scope == VariableScope.Global))
+            foreach (var variable in _variables.Where(v => v.Scope == VariableScope.global && v.VariableId >= YSCD.ReservedVars.Count))
             {
-                var v = $"{GetDecompiledVarName(0, variable.VariableId)}{(variable.Value == null ? "" : $"={variable.Value}")}";
+                var dem = variable.Dimensions.Length > 0 ? $"({string.Join(",", variable.Dimensions)})" : "";
+                var v = $"{GetDecompiledVarName(GetVariable(0, variable.VariableId))}{dem}{(variable.Value == null ? "" : $"={variable.Value}")}";
                 switch (variable.Type)
                 {
                     case 1:
                     {
-                        writer.WriteLine($"G_INT[{v}]");
+                        writer.WriteLine($"G_INT[@{v}]");
                         break;
                     }
                     case 2:
                     {
-                        writer.WriteLine($"G_FLT[{v}]");
+                        writer.WriteLine($"G_FLT[@{v}]");
                         break;
                     }
                     case 3:
                     {
-                        writer.WriteLine($"G_STR[{v}]");
+                        writer.WriteLine($"G_STR[${v}]");
                         break;
                     }
                 }

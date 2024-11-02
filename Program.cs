@@ -9,6 +9,20 @@ namespace YuRis_Tool
         {
             if (args.Length < 2)
                 return;
+
+            string yscom;
+            string ysroot;
+            if (args.Length >= 3)
+            {
+                yscom = args[1];
+                ysroot = args[2];
+            }
+            else
+            {
+                yscom = "";
+                ysroot = args[1];
+            }
+
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
             var ybnKey = BitConverter.GetBytes(CheckSum.CRC32(Encoding.ASCII.GetBytes(args[0])));
@@ -18,8 +32,14 @@ namespace YuRis_Tool
             //var yser = new YSER();
             //yser.Load(@"C:\Users\Shiroha\Desktop\渡り鳥のソムニウム\ysbin\yse.ybn");
 
+            //解析系统变量定义
+            if(!string.IsNullOrEmpty(yscom))
+                YSCD.Load(yscom);
+
             var yuris = new YuRisScript();
-            yuris.Init(args[1], ybnKey);
+            yuris.Init(ysroot, ybnKey);
+            yuris.Decompile(329);
+
             yuris.DecompileProject();
         }
     }

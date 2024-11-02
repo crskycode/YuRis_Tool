@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Text;
 
 #pragma warning disable IDE0017
 
@@ -217,7 +219,7 @@ namespace YuRis_Tool
                     var expr = _commands[i].Expressions;
                     YSCM.ExpressionInfo info = _yscm.GetExprInfo(Convert.ToInt32(_commands[i].Id), expr[o].Id);
 
-                    bool rawExpr = true;
+                    bool stringExpr = true;
                     //preprocess
                     switch (_commands[i].Id.ToString().ToUpper())
                     {
@@ -240,9 +242,9 @@ namespace YuRis_Tool
                         case "G_INT":
                         case "G_STR":
                         case "G_FLT":
-                        case "STR":
-                        case "INT":
-                        case "FLT":
+                        case "F_INT":
+                        case "F_STR":
+                        case "F_FLT":
                         case "LET":
                         {
                             var dst = new ExprInstructionSet(_scriptId);
@@ -254,6 +256,76 @@ namespace YuRis_Tool
                             o++;
                             continue;
                         }
+                        //Local vars
+                        case "STR":
+                        case "INT":
+                        case "FLT":
+                        {
+                            var dst = new ExprInstructionSet(_scriptId);
+                            var src = new ExprInstructionSet(_scriptId);
+                            dst.GetInstructions(span.Slice(expr[o].InstructionOffset, expr[o].InstructionSize));
+                            src.GetInstructions(span.Slice(expr[o + 1].InstructionOffset, expr[o + 1].InstructionSize));
+                            expr[o].ExprInsts = dst;
+                            expr[o + 1].ExprInsts = src;
+                            o++;
+
+                            //declare the local array type
+                            switch(dst._inst)
+                            {
+                                case ArrayAccess aa:
+                                {
+                                    aa.Variable._varInfo.Type = _commands[i].Id.ToString().ToUpper() switch
+                                    {
+                                        "STR" => 3,
+                                        "FLT" => 2,
+                                        _ => 1
+                                    };
+                                    var dims = new List<uint>();
+                                    foreach (var d in aa.Indices)
+                                    {
+                                        switch (d)
+                                        {
+                                            case ByteLiteral b:
+                                                dims.Add(Convert.ToUInt32(b.Value)); break;
+                                            case ShortLiteral b:
+                                                dims.Add(Convert.ToUInt32(b.Value)); break;
+                                            case IntLiteral b:
+                                                dims.Add(Convert.ToUInt32(b.Value)); break;
+                                            case LongLiteral b:
+                                                dims.Add(Convert.ToUInt32(b.Value)); break;
+                                            case DecimalLiteral b:
+                                                dims.Add(Convert.ToUInt32(b.Value)); break;
+                                            default:
+                                                dims.Add(0); break;//not supporting dynamic array
+                                        }
+                                    }
+                                    aa.Variable._varInfo.Dimensions = dims.ToArray();
+                                    break;
+                                }
+                                case VariableAccess va:
+                                {
+                                    va._varInfo.Type = _commands[i].Id.ToString().ToUpper() switch
+                                    {
+                                        "STR" => 3,
+                                        "FLT" => 2,
+                                        _ => 1
+                                    };
+                                    break;
+                                }
+                                case VariableRef vr:
+                                {
+                                    vr._varInfo.Type = _commands[i].Id.ToString().ToUpper() switch
+                                    {
+                                        "STR" => 3,
+                                        "FLT" => 2,
+                                        _ => 1
+                                    };
+                                    break;
+                                }
+                            }
+
+                            continue;
+                        }
                         case "RETURNCODE":
                         {
                             expr[o].ExprInsts = new ExprInstructionSet(_scriptId, new IntLiteral(expr[o].Id));
@@ -263,19 +335,19 @@ namespace YuRis_Tool
                         case "LOOP":
                         {
                             expr.RemoveAt(1);//modified var list
-                            rawExpr = false;
+                            stringExpr = false;
                             break;
                         }
                         case "_":
                         {
-                            rawExpr = false;
+                            stringExpr = false;
                             break;
                         }
                     }
 
                     if (info != null)
                     {
-                        var statement = new AssignExprInstSet(_scriptId, info);
+                        var statement = new AssignExprInstSet(_scriptId, info, expr[o].GetLoadOp());
                         expr[o].ExprInsts = statement;
                         if (expr[o].InstructionSize == 0)
                         {
@@ -287,7 +359,7 @@ namespace YuRis_Tool
                         {
                             Console.WriteLine($"Warning: Expr({expr[0].InstructionOffset})'s length dosen't match: ({instructionSize}/{expr[o].InstructionSize}). Turncating...");
                         }
-                        statement.GetInstructions(span.Slice(expr[o].InstructionOffset, instructionSize), rawExpr && info.ResultType == YSCM.ExprEvalResult.Raw);
+                        statement.GetInstructions(span.Slice(expr[o].InstructionOffset, instructionSize), stringExpr && info.ResultType == YSCM.ExprEvalResult.Raw);
                     }
                     else
                     {
@@ -319,8 +391,14 @@ namespace YuRis_Tool
             {
                 switch (Id.ToString())
                 {
+                    //Ignored
+                    case "IFBLEND":
+                    case "RETURNCODE":
+                        return "";
                     case "LET":
-                        return $"{Expressions[0]}={Expressions[1]}";
+                    {
+                        return $"{Expressions[0]}{Expressions[0].GetLoadOp()}{Expressions[1]}";
+                    }
                     case "STR":
                     case "INT":
                     case "FLT":
@@ -330,13 +408,57 @@ namespace YuRis_Tool
                     case "G_STR":
                     case "G_INT":
                     case "G_FLT":
-                        return $"{Id}[{Expressions[0]}={Expressions[1]}]";
+                        return $"{Id}[{Expressions[0]}{Expressions[0].GetLoadOp()}{Expressions[1]}]";
                     case "WORD":
                         return $"\n{Expressions[0].ToString().Trim('\"')}";
-                    case "RETURNCODE"://Ignored
-                        return "";
+                    case "VARACT":
+                    case "VARINFO":
+                    {
+/*                        var flag = Expressions
+                            .ToList()
+                            .Select(x => x.ExprInsts)
+                            .Where(y => y is AssignExprInstSet)
+                            .Any(z => ((AssignExprInstSet)z).exprInfo.Name.ToUpper() == "DIMSIZE");*/
+                        if (false)
+                        {
+                            StringBuilder sb = new StringBuilder();
+                            sb.Append($"{Id.ToString()}[");
+                            foreach (var expr in Expressions)
+                            {
+                                if (expr.ExprInsts is AssignExprInstSet aes)
+                                {
+                                    var s = $"{expr}";
+                                    bool flag = !s.Contains('(');
+                                    if (aes.exprInfo.Keyword.ToUpper() == "SET")
+                                    {
+                                        sb.Append(s);
+                                        if (flag && aes._inst is VariableAccess va && va._varInfo.Dimensions.Length > 0)
+                                        {
+                                            sb.Append("() ");
+                                        }
+                                        else if (flag && aes._inst is VariableRef vr && vr._varInfo.Dimensions.Length > 0)
+                                        {
+                                            sb.Append("() ");
+                                        }
+                                        else
+                                        {
+                                            sb.Append(' ');
+                                        }
+                                        continue;
+                                    }
+                                    
+                                }
+                                sb.Append($"{expr} ");
+                            }
+                            return $"{sb.ToString().TrimEnd()}]";
+                        }
+                        else
+                        {
+                            return $"{Id}[{string.Join(" ", Expressions)}]";
+                        }
+                    }
                     default:
-                        return $"{Id}[{string.Join(", ", Expressions)}]";
+                        return $"{Id}[{string.Join(" ", Expressions)}]";
                 }
             }
         }
@@ -350,6 +472,24 @@ namespace YuRis_Tool
             public int InstructionSize;
             public int InstructionOffset;
             public ExprInstructionSet ExprInsts;
+
+            public string GetLoadOp()
+            {
+                var loadOp = ArgLoadOp switch
+                {
+                    0 => "=",
+                    1 => "+=",
+                    2 => "-=",
+                    3 => "*=",
+                    4 => "/=",
+                    5 => "%=",
+                    6 => "&=",
+                    7 => "|=",
+                    8 => "^=",
+                    _ => "",
+                };
+                return loadOp;
+            }
 
             public override string ToString()
             {

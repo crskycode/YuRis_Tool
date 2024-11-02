@@ -25,13 +25,13 @@ namespace YuRis_Tool
 
         public class ExpressionInfo
         {
-            public string Name;
+            public string Keyword;
             public ExprEvalResult ResultType;
             public ResultValidateMode ValidateMode;
 
             public override string ToString()
             {
-                return $"Arg({Name}), Type:({ResultType})";
+                return $"Arg({Keyword}), Type:({ResultType})";
             }
         }
 
@@ -107,7 +107,7 @@ namespace YuRis_Tool
                 for (var j = 0; j < actionCount; j++)
                 {
                     var act = new ExpressionInfo();
-                    act.Name = reader.ReadAnsiString();
+                    act.Keyword = reader.ReadAnsiString();
                     act.ResultType = (ExprEvalResult)reader.ReadByte();
                     act.ValidateMode = (ResultValidateMode)reader.ReadByte();
                     cmd.ArgExprs.Add(act);

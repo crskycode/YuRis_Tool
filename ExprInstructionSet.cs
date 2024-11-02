@@ -86,6 +86,11 @@ namespace YuRis_Tool
                                     ll.Value = -ll.Value;
                                     break;
                                 }
+                                case DecimalLiteral dl:
+                                {
+                                    dl.Value = -dl.Value;
+                                    break;
+                                }
                                 case ArrayAccess aa:
                                 {
                                     aa.Negate ^= true;
@@ -149,14 +154,16 @@ namespace YuRis_Tool
     class AssignExprInstSet : ExprInstructionSet
     {
         public YSCM.ExpressionInfo exprInfo;
-        public AssignExprInstSet(int scriptId, YSCM.ExpressionInfo info) : base(scriptId)
+        public string LoadOp;
+        public AssignExprInstSet(int scriptId, YSCM.ExpressionInfo info, string loadOp = "=") : base(scriptId)
         {
             exprInfo = info;
+            LoadOp = loadOp;
         }
 
-        public override void GetInstructions(Span<byte> data, bool rawExpr)
+        public override void GetInstructions(Span<byte> data, bool stringExpr)
         {
-            if (rawExpr)
+            if (stringExpr)
             {
                 _insts.Add(new RawStringLiteral(Extensions.DefaultEncoding.GetString(data)));//FIXME
                 Evaluate();
@@ -167,11 +174,22 @@ namespace YuRis_Tool
 
         public override string ToString()
         {
-            if (string.IsNullOrEmpty(exprInfo.Name))
+            if (string.IsNullOrEmpty(exprInfo.Keyword))
             {
                 return $"{_inst}";
             }
-            return $"{exprInfo.Name}={_inst}";
+
+            string br = "";
+            if (_inst is VariableAccess va && va._varInfo.Dimensions.Length > 0)
+            {
+                br = "()";
+            }
+            else if (_inst is VariableRef vr && vr._varInfo.Dimensions.Length > 0)
+            {
+                br = "()";
+            }
+
+            return $"{exprInfo.Keyword}{LoadOp}{_inst}{br}";
         }
     }
 }

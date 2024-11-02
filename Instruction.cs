@@ -178,7 +178,7 @@ namespace YuRis_Tool
 
         public override string ToString()
         {
-            return $"{Left}{GetOperator(Operator)}{Right}";
+            return $"({Left}){GetOperator(Operator)}({Right})";
         }
     }
 
@@ -219,7 +219,7 @@ namespace YuRis_Tool
         public override string ToString()
         {
             if (Negate)
-                return $"-({base.ToString()})";
+                return $"(-({base.ToString()}))";
             return base.ToString();
         }
     };
@@ -331,10 +331,10 @@ namespace YuRis_Tool
                 }
                 case Type.Number:
                 {
-                    return $"(Number)({Operand})";
+                    return $"@({Operand})";
                 }
             }
-            return $"({Operator}){Operand}";
+            return $"({Operator})({Operand})";
         }
     }
 
@@ -406,40 +406,42 @@ namespace YuRis_Tool
 
     public class VariableAccess : AccessInstruction
     {
-        int _scriptIndex;
         public VariableLoadMode Mode;
         public short Index;
+        public YSVR.Variable _varInfo;
         public VariableAccess(int scriptIndex, VariableLoadMode mode, short index)
         {
-            _scriptIndex = scriptIndex;
             Mode = mode;
             Index = index;
+            _varInfo = YSVR.GetVariable(scriptIndex, Index);
         }
 
         public override string ToString()
         {
-            return $"{(Negate ? "-" : "")}{(char)Mode}{YSVR.GetDecompiledVarName(_scriptIndex, Index)}";
+            if (Negate)
+                return $"(-{(char)Mode}{YSVR.GetDecompiledVarName(_varInfo)})";
+            return $"{(char)Mode}{YSVR.GetDecompiledVarName(_varInfo)}";
         }
     }
 
     public class VariableRef: Instruction
     {
-        int _scriptIndex;
         public VariableLoadMode Mode;
         public short Index;
         public bool SmallV;
+        public YSVR.Variable _varInfo;
 
         public VariableRef(int scriptIndex, VariableLoadMode mode, short index, bool smallV)
         {
-            _scriptIndex = scriptIndex;
             Mode = mode;
             Index = index;
             SmallV = smallV;
+            _varInfo = YSVR.GetVariable(scriptIndex, Index);
         }
 
         public override string ToString()
         {
-            return $"{(char)Mode}{YSVR.GetDecompiledVarName(_scriptIndex, Index)}";
+            return $"{(char)Mode}{YSVR.GetDecompiledVarName(_varInfo)}";
         }
     }
 
@@ -455,7 +457,9 @@ namespace YuRis_Tool
 
         public override string ToString()
         {
-            return $"{(Negate ? "-" : "")}{Variable}({string.Join<Instruction>(",", Indices)})";
+            if (Negate)
+                return $"(-{Variable}({string.Join<Instruction>(",", Indices)}))";
+            return $"{Variable}({string.Join<Instruction>(",", Indices)})";
         }
     }
 
