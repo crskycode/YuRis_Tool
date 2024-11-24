@@ -1,16 +1,24 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace YuRis_Tool
 {
-    class YSVR
+    public class YSVR
     {
-        public void Load(string filePath)
+        public enum VariableScope : byte
+        {
+            None,
+            Global,
+            Script
+        }
+
+        public record struct Variable(VariableScope Scope, short ScriptIndex, short VariableId, byte Type, uint[] Dimensions, object Value);
+
+        static List<Variable> _variables = new List<Variable>();
+
+        public static void Load(string filePath)
         {
             using (var stream = File.OpenRead(filePath))
             using (var reader = new BinaryReader(stream))
@@ -19,7 +27,7 @@ namespace YuRis_Tool
             }
         }
 
-        void Read(BinaryReader reader)
+        static void Read(BinaryReader reader)
         {
             var magic = reader.ReadInt32();
 
@@ -32,49 +40,85 @@ namespace YuRis_Tool
 
             var count = reader.ReadUInt16();
 
-            var encoding = Encoding.GetEncoding("shift_jis");
 
-            for (var i = 0; i < count; i++)
+            for (int i = 0; i < count; i++)
             {
-                reader.ReadByte(); // data type
-                reader.ReadByte(); // field_0
-                reader.ReadUInt16(); // script id
-
-                reader.ReadUInt16(); // store id
-
-                var dt = reader.ReadByte(); // data type
-                
-                var field_2 = reader.ReadByte(); // count
-                for (var j = 0; j < field_2; j++)
-                {
-                    reader.ReadInt32();
+                var scope = (VariableScope)reader.ReadByte();
+                var scriptIndex = reader.ReadInt16();
+                var variableId = reader.ReadInt16();
+                var type = reader.ReadByte();
+                var dimensionCount = reader.ReadByte();
+                var dimensions = new uint[dimensionCount];
+                for (var o = 0; o < dimensionCount; o++)
+                { 
+                    dimensions[o] = reader.ReadUInt32();
                 }
 
-                switch (dt)
+                object value = null;
+                switch (type)
                 {
-                    case 0:
-                        break;
                     case 1:
-                        var ivar = reader.ReadInt64();
+                        value = reader.ReadInt64();
                         break;
                     case 2:
-                        var fvar = reader.ReadDouble();
+                        value = reader.ReadDouble();
                         break;
                     case 3:
-                        var len = reader.ReadUInt16();
-                        var data = reader.ReadBytes(len);
-                        if (data.Length != 0)
-                        {
-                            if (data[0] == 0x4D)
-                            {
-                                var s = encoding.GetString(data, 3, data.Length - 3);
-                                Debug.WriteLine(s);
-                            }
-                        }
-                        // loader()
+                    {
+                        var offset = 0;
+                        var length = reader.ReadUInt16();
+                        if(length > 0)
+                            value = Instruction.GetInstruction(0, reader.ReadBytes(length).AsSpan(), ref offset);
                         break;
+                    }
                     default:
-                        throw new Exception("unknown data type");
+                        break;
+                };
+                _variables.Add(new Variable(scope, scriptIndex, variableId, type, dimensions, value));
+            }
+        }
+
+        public static string GetDecompiledVarName(int scriptIndex, short variableId)
+        {
+            var variable = _variables.Where(v => v.ScriptIndex == scriptIndex && v.VariableId == variableId).FirstOrDefault();
+            if(variable == default)
+            {
+                variable = _variables.Where(v => v.VariableId == variableId).FirstOrDefault();
+            }
+
+            if(variable != default)
+            {
+                return $"{(variable.Scope == VariableScope.Global ? "global" : "script")}.{variableId}";
+            }
+            else
+            {
+                //stack local var?
+                return $"local.{variableId}";
+            }
+        }
+
+        public static void WriteGlobalVarDecl(TextWriter writer)
+        {
+            foreach (var variable in _variables.Where(v => v.Scope == VariableScope.Global))
+            {
+                var v = $"{GetDecompiledVarName(0, variable.VariableId)}{(variable.Value == null ? "" : $"={variable.Value}")}";
+                switch (variable.Type)
+                {
+                    case 1:
+                    {
+                        writer.WriteLine($"G_INT[{v}]");
+                        break;
+                    }
+                    case 2:
+                    {
+                        writer.WriteLine($"G_FLT[{v}]");
+                        break;
+                    }
+                    case 3:
+                    {
+                        writer.WriteLine($"G_STR[{v}]");
+                        break;
+                    }
                 }
             }
         }
