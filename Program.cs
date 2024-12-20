@@ -38,7 +38,6 @@ namespace YuRis_Tool
 
             var yuris = new YuRisScript();
             yuris.Init(ysroot, ybnKey);
-            yuris.Decompile(329);
 
             yuris.DecompileProject();
         }
