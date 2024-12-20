@@ -46,11 +46,12 @@ namespace YuRis_Tool
 
             for (var i = 0; i < commands.Count; i++)
             {
-                var label = _yslb.Find(scriptIndex, i);
+                var labels = _yslb.Find(scriptIndex, i);
 
-                if (label != null)
+                if (labels != null)
                 {
-                    outputStream.WriteLine($"#={label.Name}");
+                    foreach(var label in labels)
+                        outputStream.WriteLine($"#={label.Name}");
                 }
 
                 var cmd = commands[i];
@@ -99,7 +100,12 @@ namespace YuRis_Tool
                 using var textWriter = new StringWriter();
                 if(Decompile(script.Id, textWriter))
                 {
-                    File.WriteAllText(sourcePath, textWriter.ToString());
+                    //File.WriteAllText(sourcePath, textWriter.ToString());
+                    var data = textWriter.ToString();
+                    if (data.StartsWith("END[]") && data.Length < 8)
+                        File.WriteAllText(sourcePath, "//Empty file.");
+                    else
+                        File.WriteAllBytes(sourcePath, Extensions.DefaultEncoding.GetBytes(data[..^8]));
                     Console.Write($" -> {sourcePath}");
                 }
                 else
@@ -115,12 +121,13 @@ namespace YuRis_Tool
                 .Select(parts => parts.Distinct(StringComparer.OrdinalIgnoreCase))
                 .TakeWhile(distinct => distinct.Count() == 1)
                 .Select(distinct => distinct.First())
-                .Append("globalVarDecl.txt")
+                .Append("global.txt")
                 .ToArray();
 
             using var globalVarWriter = new StringWriter();
             YSVR.WriteGlobalVarDecl(globalVarWriter);
-            File.WriteAllText(Path.Combine(longestCommonPathComponents), globalVarWriter.ToString());
+            //File.WriteAllText(Path.Combine(longestCommonPathComponents), globalVarWriter.ToString());
+            File.WriteAllBytes(Path.Combine(longestCommonPathComponents), Extensions.DefaultEncoding.GetBytes(globalVarWriter.ToString()));
         }
     }
 }

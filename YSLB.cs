@@ -78,11 +78,11 @@ namespace YuRis_Tool
             Debug.Assert(reader.BaseStream.Position == reader.BaseStream.Length);
         }
 
-        public Label Find(int scriptId, int commandIndex)
+        public List<Label> Find(int scriptId, int commandIndex)
         {
-            return _labels.FirstOrDefault(
+            return _labels.Where(
                 a => (a.ScriptId == scriptId) && (a.CommandIndex == commandIndex)
-            );
+            ).ToList();
         }
     }
 }
